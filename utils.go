@@ -1,6 +1,7 @@
 package orientation
 
 import (
+	"fmt"
 	"image"
 	"image/gif"
 	"image/jpeg"
@@ -18,8 +19,8 @@ import (
 // all necessary operation to reverse its orientation to 1 or none
 // The result is a image with corrected orientation and without
 // exif data.
-// will also return orientation "1" or "none"
-func ReadImage(imgBody []byte, logger *logrus.Entry, imageId string) (imagebody []byte, expectedOrientation string) {
+
+func ReadImage(imgBody []byte, logger *logrus.Entry, imageId string) (imagebody []byte) {
 	imgBodyReader := bytes.NewReader(imgBody)
 
 	// deal with exif
@@ -29,24 +30,16 @@ func ReadImage(imgBody []byte, logger *logrus.Entry, imageId string) (imagebody 
 	}
 	if imgExtension != "png" && imgExtension != "jpg" && imgExtension != "jpeg" && imgExtension != "gif" {
 		logger.Infof("image type %s has no exif to check for orientation \n Image ID: %s", imgExtension, imageId)
-		return imgBody, "none"
+		return imgBody
 	}
-	//dont know why, but exif needs this "hack" to decode properly sometimes
-	imgBodyStringReader := strings.NewReader(string(imgBody))
-	x, err := exif.Decode(imgBodyStringReader)
-	if err != nil {
-		if x == nil {
-			logger.Warningf("Unable to read exif data, might imply that orientation is correct and no manipulation is needed, error found: %s \n Image ID: %s", err, imageId)
-			return imgBody, "none"
-		}
-		logger.Errorf("failed reading exif data: %s \n Image ID: %s", err.Error(), imageId)
-	}
+	x := GetExif(imgBody, logger, imageId)
+
 	if x != nil {
 		orient, _ := x.Get(exif.Orientation)
 		if orient != nil {
 			if orient.String() == "1" || orient.String() == "0" {
 				logger.Infof("image already has correct orientation %s, no further exif manipulation is needed \n Image ID: %s", orient, imageId)
-				return imgBody, orient.String()
+				return imgBody
 			}
 			logger.Infof("image had orientation %s \n Image ID: %s", orient.String(), imageId)
 
@@ -59,7 +52,7 @@ func ReadImage(imgBody []byte, logger *logrus.Entry, imageId string) (imagebody 
 					logger.Errorf("error while encoding corrected image: %s \n Image ID: %s", err, imageId)
 				}
 				imgBody = buffer.Bytes()
-				return imgBody, "none"
+				return imgBody
 			case "gif":
 				buffer := new(bytes.Buffer)
 				err := gif.Encode(buffer, img, nil)
@@ -67,7 +60,7 @@ func ReadImage(imgBody []byte, logger *logrus.Entry, imageId string) (imagebody 
 					logger.Errorf("error while encoding corrected image: %s \n Image ID: %s", err, imageId)
 				}
 				imgBody = buffer.Bytes()
-				return imgBody, "none"
+				return imgBody
 			case "jpeg", "jpg":
 				buffer := new(bytes.Buffer)
 				err := jpeg.Encode(buffer, img, nil)
@@ -75,14 +68,14 @@ func ReadImage(imgBody []byte, logger *logrus.Entry, imageId string) (imagebody 
 					logger.Errorf("error while encoding corrected image: %s \n Image ID: %s", err, imageId)
 				}
 				imgBody = buffer.Bytes()
-				return imgBody, "none"
+				return imgBody
 			}
 		} else {
 			logger.Infof("image has no orientation data - implying 1, no further exif manipulation is needed \n Image ID: %s", imageId)
-			return imgBody, "none"
+			return imgBody
 		}
 	}
-	return imgBody, "none"
+	return imgBody
 }
 
 // reverseOrientation amply`s what ever operation is necessary to transform given orientation
@@ -106,4 +99,33 @@ func reverseOrientation(img image.Image, o string, logger *logrus.Entry, imageId
 	}
 	logger.Errorf("unknown orientation: %s, when attempting to rotate, expected 2-8 \n Image ID: %s", o, imageId)
 	return imaging.Clone(img)
+}
+
+func GetExif(imgBody []byte, logger *logrus.Entry, imageId string) *exif.Exif {
+	//dont know why, but exif needs this "hack" to decode properly sometimes
+	imgBodyStringReader := strings.NewReader(string(imgBody))
+	x, err := exif.Decode(imgBodyStringReader)
+	if fmt.Sprint(err) == "EOF" {
+		logger.Infof("Image is clean of exif data")
+		return nil
+	}
+	if err != nil {
+		if x == nil {
+			logger.Infof("Unable to read exif data, might imply that orientation is correct and no manipulation is needed, error found: %s \n Image ID: %s", err, imageId)
+			return nil
+		}
+		logger.Errorf("failed reading exif data: %s \n Image ID: %s", err.Error(), imageId)
+	}
+	return x
+}
+
+func GetExifOrientation(exifData *exif.Exif) (string, error) {
+	if exifData == nil {
+		return "none", nil
+	}
+	o, err := exifData.Get(exif.Orientation)
+	if o == nil {
+		return "none", nil
+	}
+	return o.String(), err
 }
