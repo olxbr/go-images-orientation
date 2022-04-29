@@ -1,6 +1,7 @@
 package orientation
 
 import (
+	"errors"
 	"fmt"
 	"image"
 	"image/gif"
@@ -43,7 +44,11 @@ func ReadImage(imgBody []byte, logger *logrus.Entry, imageId string) (imagebody 
 			}
 			logger.Infof("image had orientation %s \n Image ID: %s", orient.String(), imageId)
 
-			img = reverseOrientation(img, orient.String(), logger, imageId)
+			img, err = reverseOrientation(img, orient.String(), logger, imageId)
+			if err != nil {
+				logger.Errorf("could not strip exif of image %s, %s\nreturning normal image", imageId, err)
+				return imgBody
+			}
 			switch imgExtension {
 			case "png":
 				buffer := new(bytes.Buffer)
@@ -80,25 +85,40 @@ func ReadImage(imgBody []byte, logger *logrus.Entry, imageId string) (imagebody 
 
 // reverseOrientation amply`s what ever operation is necessary to transform given orientation
 // to the orientation 1
-func reverseOrientation(img image.Image, o string, logger *logrus.Entry, imageId string) *image.NRGBA {
+func reverseOrientation(img image.Image, o string, logger *logrus.Entry, imageId string) (returnedImage *image.NRGBA, errorFound error) {
+	var correctedImg *image.NRGBA = nil
+	defer func() {
+		if recover() != nil {
+			errorFound = errors.New("error when trying to re-orient image")
+			returnedImage = nil
+		}
+	}()
 	switch o {
 	case "2":
-		return imaging.FlipV(img)
+		correctedImg = imaging.FlipV(img)
+		return correctedImg, nil
 	case "3":
-		return imaging.Rotate180(img)
+		correctedImg = imaging.Rotate180(img)
+		return correctedImg, nil
 	case "4":
-		return imaging.Rotate180(imaging.FlipV(img))
+		correctedImg = imaging.Rotate180(imaging.FlipV(img))
+		return correctedImg, nil
 	case "5":
-		return imaging.Rotate270(imaging.FlipV(img))
+		correctedImg = imaging.Rotate270(imaging.FlipV(img))
+		return correctedImg, nil
 	case "6":
-		return imaging.Rotate270(img)
+		correctedImg = imaging.Rotate270(img)
+		return correctedImg, nil
 	case "7":
-		return imaging.Rotate90(imaging.FlipV(img))
+		correctedImg = imaging.Rotate90(imaging.FlipV(img))
+		return correctedImg, nil
 	case "8":
-		return imaging.Rotate90(img)
+		correctedImg = imaging.Rotate90(img)
+		return correctedImg, nil
 	}
 	logger.Errorf("unknown orientation: %s, when attempting to rotate, expected 2-8 \n Image ID: %s", o, imageId)
-	return imaging.Clone(img)
+	correctedImg = imaging.Clone(img)
+	return correctedImg, nil
 }
 
 func GetExif(imgBody []byte, logger *logrus.Entry, imageId string) *exif.Exif {

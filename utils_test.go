@@ -2,6 +2,7 @@ package orientation
 
 import (
 	"fmt"
+	"image"
 	"os"
 	"testing"
 
@@ -85,6 +86,22 @@ func TestFnone(t *testing.T) {
 	}
 
 	t.Logf("test Fnone passed with orientation %s", neworientation)
+}
+
+func TestOrientError(t *testing.T) {
+	var messedUpImage image.Image = nil
+
+	t.Logf("should return error")
+	orientation := "4"
+	img, err := reverseOrientation(messedUpImage, orientation, logrus.NewEntry(logrus.StandardLogger()), "I D-test go :)")
+
+	if img != nil {
+		t.Errorf("unexpected result for reversing nil img")
+	}
+
+	if err == nil {
+		t.Errorf("expected error was not found")
+	}
 }
 
 func getImageFromFilePath(filePath string) ([]byte, error) {
